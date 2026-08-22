@@ -50,13 +50,23 @@ data is baked into the APK — the app only touches the network if you tap *Refr
    real audience behind them.
 3. **Price** — dollar amounts near the title are collected. The lowest is taken as what you'd pay;
    a noticeably higher one alongside it is taken as the list price the store is comparing against.
-4. **Baseline** — the bundled cross-store median if the title has one, otherwise that on-screen list
-   price. The panel always says which basis it used, because a list price is usually inflated MSRP
-   and a 60% discount against it can be no discount at all.
+4. **Baseline** — ranked by how much it deserves to be trusted:
+   1. the bundled cross-store median — a real market price
+   2. a labelled list price on the page (`MSRP`, `Was`, `Compare at`) — usually inflated
+   3. an unlabelled higher price beside the sale price — probably the strike-through
+   4. the store's own `-62%` badge — their arithmetic, against their own list price
+
+   The card always names which one was used, because a 60% discount off invented MSRP is no deal.
 5. **Verdict** — rating and rank first, then the discount.
 
-`NO PRICE` means the game clears on pedigree but nothing could be measured — no price on screen, or
-no baseline for that title.
+`NO PRICE` means the game clears on pedigree but no price was found beside it. `NO BASELINE` means a
+price was found but there was nothing to measure it against — no bundled median, no list price, no
+discount badge. The two are separated deliberately: the first is a layout problem, the second is a
+data problem, and they want different fixes.
+
+`tools/test-matcher.js` and `tools/test-prices.js` exercise the matching and pricing logic against
+the tracker's own deal rows and against synthetic store layouts. Run them with `node` from `tools/`
+after changing either — they catch far more than a rebuild does.
 
 ## Keeping it current
 

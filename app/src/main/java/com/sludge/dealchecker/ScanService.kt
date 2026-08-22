@@ -248,9 +248,10 @@ class ScanService : Service() {
                 }
                 val hits = Matcher.match(lines)
                 val prices = PriceFinder.pricesIn(lines)
+                val badges = PriceFinder.discountsIn(lines)
+                val evidence = PriceFinder.attach(hits, prices, badges, bmp.width, bmp.height)
                 val findings = hits.map { h ->
-                    val (price, list) = PriceFinder.forHit(h, prices, bmp.width, bmp.height)
-                    Finding(h, Rules.evaluate(h.game, price, list))
+                    Finding(h, Rules.evaluate(h.game, evidence[h.game.id]))
                 }.sortedWith(compareBy({ tierOrder(it.verdict.tier) }, { it.hit.box.top }))
                 bmp.recycle()
                 showResults(findings)
@@ -266,9 +267,10 @@ class ScanService : Service() {
     private fun tierOrder(t: Tier) = when (t) {
         Tier.BUY -> 0
         Tier.NEAR -> 1
-        Tier.UNKNOWN -> 2
-        Tier.PASS -> 3
-        Tier.OWNED -> 4
+        Tier.NO_BASELINE -> 2
+        Tier.NO_PRICE -> 3
+        Tier.PASS -> 4
+        Tier.OWNED -> 5
     }
 
     // ---------- results overlay ----------

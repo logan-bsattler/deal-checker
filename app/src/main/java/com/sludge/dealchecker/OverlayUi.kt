@@ -19,7 +19,8 @@ object Palette {
         Tier.NEAR -> Color.parseColor("#E9C46A")
         Tier.PASS -> Color.parseColor("#9AA0A6")
         Tier.OWNED -> Color.parseColor("#5AB0F2")
-        Tier.UNKNOWN -> Color.parseColor("#B39DDB")
+        Tier.NO_BASELINE -> Color.parseColor("#B39DDB")
+        Tier.NO_PRICE -> Color.parseColor("#8A9094")
     }
 
     fun label(t: Tier): String = when (t) {
@@ -27,7 +28,8 @@ object Palette {
         Tier.NEAR -> "NEAR MISS"
         Tier.PASS -> "PASS"
         Tier.OWNED -> "OWNED"
-        Tier.UNKNOWN -> "NO PRICE"
+        Tier.NO_BASELINE -> "NO BASELINE"
+        Tier.NO_PRICE -> "NO PRICE"
     }
 }
 
