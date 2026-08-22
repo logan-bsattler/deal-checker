@@ -72,9 +72,32 @@ after changing either — they catch far more than a rebuild does.
 
 - **Owned list**: re-run the `refresh-bgg-collection` job against the tracker, then copy the new
   `OWNED` array into `assets/owned.json` and push.
-- **Medians**: same idea from `ALL_DEALS`. Or host a `medians.json` (`[["Game name", 53.99], …]`)
-  anywhere reachable, paste the URL into the app, and hit **Refresh price medians** — the downloaded
-  copy wins over the bundled one from then on.
+- **Medians**: mostly self-maintaining now — see *Live medians* below. To reseed the bundled set,
+  take them from `ALL_DEALS` again. Or host a `medians.json` (`[["Game name", 53.99], …]`) anywhere
+  reachable, paste the URL into the app, and hit **Refresh price medians**.
+
+## Live medians (Board Game Oracle)
+
+Board Game Oracle is a tRPC app, so there is a plain JSON API behind the site:
+
+```
+GET /api/trpc/boardgame.list?input={"region":"us","q":"<name>"}   → candidates: title, year, key
+GET /api/trpc/boardgame.get?input={"region":"us","key":"<key>"}   → bgg_id + price_stats
+```
+
+`price_stats.discount_median_compare_price` is the cross-store median — the same number the tracker
+computes by hand. When a scan turns up a game with no median, the app asks Oracle in the background
+and caches the answer for a week (misses for three days, so untracked games are not re-queried on
+every scan). Verdicts firm up in place a second or two after the panel appears.
+
+The candidate is only accepted when **its `bgg_id` equals the one in our index**. Name matching
+alone is not safe: an Oracle search for "Terra Nova" returns both the 2006 and 2022 games, and the
+tracker has picked the wrong one before. Verified against 11 games — all resolved on the first
+candidate.
+
+A median built on fewer than three offers is discarded rather than trusted.
+
+Turn the whole thing off with the checkbox on the main screen; the app then stays fully offline.
 - **BGG index**: swap in a newer dump from
   `raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master/YYYY-MM-DD.csv` and rebuild
    `games.tsv` with `tools/build-index.js`.

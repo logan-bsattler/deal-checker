@@ -182,7 +182,14 @@ object GameIndex {
     }
 
     fun medianCount(): Int = medians.size
-    fun medianFor(g: Game): Double? = medians[g.norm]
+    fun learnedCount(): Int = MedianCache.size()
+
+    /** Bundled median first — it was verified by hand — then anything learned from Oracle. */
+    fun medianFor(g: Game): Double? = medians[g.norm] ?: MedianCache.get(g.norm)
+
+    /** A game worth asking Oracle about: no median yet, and not asked recently. */
+    fun needsLookup(g: Game): Boolean =
+        medians[g.norm] == null && !MedianCache.isKnown(g.norm) && !isOwned(g)
     fun isOwned(g: Game): Boolean = ownedNorms.contains(g.norm)
 
     fun exact(norm: String): Game? = byNorm[norm]?.let { games[it] }

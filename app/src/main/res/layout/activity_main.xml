@@ -71,6 +71,19 @@
             android:layout_marginTop="8dp"
             android:text="Stop the bubble" />
 
+        <CheckBox
+            android:id="@+id/liveLookup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Look up missing medians on Board Game Oracle" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:text="When a scan finds a game with no bundled median, the app asks Board Game Oracle for the real cross-store median in the background and remembers it. Verdicts firm up a second or two after the panel appears, and coverage grows as you browse." />
+
         <Button
             android:id="@+id/btnRefresh"
             android:layout_width="match_parent"

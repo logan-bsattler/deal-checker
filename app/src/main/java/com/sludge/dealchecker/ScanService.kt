@@ -44,6 +44,7 @@ class ScanService : Service() {
         const val ACTION_STOP = "com.sludge.dealchecker.STOP"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_DATA = "data"
+        const val KEY_LIVE = "liveLookup"
         private const val CHANNEL = "dealchecker"
         private const val NOTIF_ID = 42
         private const val TAG = "ScanService"
@@ -61,6 +62,12 @@ class ScanService : Service() {
     private var bubble: View? = null
     private var overlay: View? = null
     private var scanning = false
+
+    // Kept so an Oracle lookup landing after the scan can re-score without grabbing the screen again.
+    private var lastHits: List<Hit> = emptyList()
+    private var lastEvidence: Map<String, PriceEvidence> = emptyMap()
+    private val lookupPool = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private var lookupsInFlight = 0
 
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
@@ -110,7 +117,10 @@ class ScanService : Service() {
         addBubble()
         running = true
 
-        Thread { GameIndex.load(applicationContext) }.start()
+        Thread {
+            MedianCache.load(applicationContext)
+            GameIndex.load(applicationContext)
+        }.start()
         return START_STICKY
     }
 
@@ -250,12 +260,12 @@ class ScanService : Service() {
                 val prices = PriceFinder.pricesIn(lines)
                 val badges = PriceFinder.discountsIn(lines)
                 val evidence = PriceFinder.attach(hits, prices, badges, bmp.width, bmp.height)
-                val findings = hits.map { h ->
-                    Finding(h, Rules.evaluate(h.game, evidence[h.game.id]))
-                }.sortedWith(compareBy({ tierOrder(it.verdict.tier) }, { it.hit.box.top }))
+                lastHits = hits
+                lastEvidence = evidence
                 bmp.recycle()
-                showResults(findings)
+                showResults(score())
                 scanning = false
+                requestMedians(hits)
             }
             .addOnFailureListener { e ->
                 bmp.recycle()
@@ -263,6 +273,37 @@ class ScanService : Service() {
                 toast("Text recognition failed: ${e.message}")
             }
     }
+
+    private fun score(): List<Finding> =
+        lastHits.map { Finding(it, Rules.evaluate(it.game, lastEvidence[it.game.id])) }
+            .sortedWith(compareBy({ tierOrder(it.verdict.tier) }, { it.hit.box.top }))
+
+    /**
+     * Asks Oracle for the medians we are missing, then re-scores in place. The panel is already on
+     * screen by this point, so a verdict can visibly firm up from NO BASELINE to a real percentage
+     * a second or two later.
+     */
+    private fun requestMedians(hits: List<Hit>) {
+        if (!prefs().getBoolean(KEY_LIVE, true)) return
+        val wanted = hits.map { it.game }
+            .filter { it.rating >= Rules.MIN_RATING && it.rank in 1 until Rules.MAX_RANK }
+            .filter { GameIndex.needsLookup(it) }
+            .distinctBy { it.id }
+        if (wanted.isEmpty()) return
+        lookupsInFlight += wanted.size
+        for (g in wanted) {
+            lookupPool.execute {
+                val m = Oracle.medianFor(g)
+                MedianCache.put(applicationContext, g.norm, m)
+                main.post {
+                    lookupsInFlight--
+                    if (overlay != null && lookupsInFlight <= 0) showResults(score())
+                }
+            }
+        }
+    }
+
+    private fun prefs() = getSharedPreferences("dealchecker", Context.MODE_PRIVATE)
 
     private fun tierOrder(t: Tier) = when (t) {
         Tier.BUY -> 0
@@ -395,6 +436,7 @@ class ScanService : Service() {
         bubble?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         bubble = null
         capture?.release(); capture = null
+        try { lookupPool.shutdownNow() } catch (_: Exception) {}
         try { projection?.unregisterCallback(projectionCallback) } catch (_: Exception) {}
         try { projection?.stop() } catch (_: Exception) {}
         projection = null

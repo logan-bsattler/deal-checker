@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -54,6 +55,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val live = findViewById<CheckBox>(R.id.liveLookup)
+        live.isChecked = prefs.getBoolean(ScanService.KEY_LIVE, true)
+        live.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(ScanService.KEY_LIVE, on).apply()
+        }
+
         findViewById<Button>(R.id.btnStart).setOnClickListener { startBubble() }
 
         findViewById<Button>(R.id.btnStop).setOnClickListener {
@@ -69,6 +76,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         Thread {
+            MedianCache.load(applicationContext)
             GameIndex.load(applicationContext)
             runOnUiThread { showDbInfo() }
         }.start()
@@ -102,7 +110,8 @@ class MainActivity : AppCompatActivity() {
         }
         dbInfo.text = if (GameIndex.ready)
             "${GameIndex.games.size} ranked BGG titles · ${GameIndex.ownedCount} games you own · " +
-                "${GameIndex.medianCount()} price medians (${GameIndex.medianSource})\n" +
+                "${GameIndex.medianCount()} bundled medians (${GameIndex.medianSource}) + " +
+                "${GameIndex.learnedCount()} learned from Oracle\n" +
                 "Overlay permission: ${if (canDrawOverlays()) "granted" else "NOT granted"}"
         else "Loading the BGG index…"
     }
