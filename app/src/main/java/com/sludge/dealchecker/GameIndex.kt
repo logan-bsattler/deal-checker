@@ -40,6 +40,7 @@ object GameIndex {
     private val medians = HashMap<String, Double>()
 
     @Volatile var ready = false; private set
+    @Volatile var loadError: String? = null; private set
     var medianSource = "bundled"; private set
     var ownedCount = 0; private set
 
@@ -71,9 +72,16 @@ object GameIndex {
     fun load(ctx: Context) {
         if (ready) return
         val t0 = System.currentTimeMillis()
-        loadGames(ctx)
-        loadOwned(ctx)
-        loadMedians(ctx)
+        try {
+            loadGames(ctx)
+            loadOwned(ctx)
+            loadMedians(ctx)
+        } catch (e: Throwable) {
+            // A broken asset must not take the whole process down with it.
+            loadError = e.javaClass.simpleName + ": " + e.message
+            Log.e(TAG, "load failed", e)
+            return
+        }
         ready = true
         Log.i(TAG, "loaded ${games.size} games, $ownedCount owned, ${medians.size} medians in ${System.currentTimeMillis() - t0}ms")
     }

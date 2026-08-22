@@ -18,6 +18,25 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/crashBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:padding="10dp"
+            android:background="#33FF5252"
+            android:textSize="10sp"
+            android:typeface="monospace"
+            android:textIsSelectable="true"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnClearCrash"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dismiss crash report"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/rules"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

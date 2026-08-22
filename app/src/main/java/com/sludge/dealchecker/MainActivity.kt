@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        showCrashIfAny()
+
         status = findViewById(R.id.status)
         dbInfo = findViewById(R.id.dbInfo)
         urlField = findViewById(R.id.medianUrl)
@@ -72,12 +74,32 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /** A sideloaded build has no adb attached, so the last stack trace is shown in the app. */
+    private fun showCrashIfAny() {
+        val f = File(filesDir, "last-crash.txt")
+        val box = findViewById<TextView>(R.id.crashBox)
+        val clear = findViewById<Button>(R.id.btnClearCrash)
+        if (!f.exists()) return
+        box.text = "LAST CRASH\n\n" + f.readText().take(6000)
+        box.visibility = android.view.View.VISIBLE
+        clear.visibility = android.view.View.VISIBLE
+        clear.setOnClickListener {
+            f.delete()
+            box.visibility = android.view.View.GONE
+            clear.visibility = android.view.View.GONE
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         showDbInfo()
     }
 
     private fun showDbInfo() {
+        GameIndex.loadError?.let {
+            dbInfo.text = "Index failed to load — $it"
+            return
+        }
         dbInfo.text = if (GameIndex.ready)
             "${GameIndex.games.size} ranked BGG titles · ${GameIndex.ownedCount} games you own · " +
                 "${GameIndex.medianCount()} price medians (${GameIndex.medianSource})\n" +
