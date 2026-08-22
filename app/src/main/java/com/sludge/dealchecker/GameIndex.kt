@@ -30,6 +30,7 @@ data class Game(
 object GameIndex {
 
     private const val TAG = "GameIndex"
+    private const val GAMES_ASSET = "games.tsv.gz"
 
     val games = ArrayList<Game>(32000)
     private val byNorm = HashMap<String, Int>(48000)
@@ -87,7 +88,11 @@ object GameIndex {
     }
 
     private fun loadGames(ctx: Context) {
-        BufferedReader(InputStreamReader(GZIPInputStream(ctx.assets.open("games.tsv.gz")), Charsets.UTF_8)).use { r ->
+        val present = try { ctx.assets.list("")?.toList() ?: emptyList() } catch (e: Exception) { listOf("<list failed>") }
+        if (!present.contains(GAMES_ASSET)) {
+            throw java.io.FileNotFoundException("$GAMES_ASSET missing; assets present: $present")
+        }
+        BufferedReader(InputStreamReader(GZIPInputStream(ctx.assets.open(GAMES_ASSET)), Charsets.UTF_8)).use { r ->
             r.readLine() // header
             var line = r.readLine()
             while (line != null) {

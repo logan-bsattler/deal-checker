@@ -31,6 +31,13 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      - name: Show what is inside the APK
+        run: |
+          echo "--- assets packaged ---"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -i assets || echo "NO ASSETS IN APK"
+          echo "--- source tree ---"
+          ls -la app/src/main/assets/
+
       - name: Rename APK
         run: |
           mkdir -p dist

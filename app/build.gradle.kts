@@ -24,11 +24,6 @@ android {
         }
     }
 
-    androidResources {
-        // games.tsv.gz is already compressed; keep it byte-identical in the APK
-        noCompress += "gz"
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
