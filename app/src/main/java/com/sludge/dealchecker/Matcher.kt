@@ -41,6 +41,20 @@ object Matcher {
         "contactus", "aboutus", "myaccount", "orderhistory", "trackorder"
     )
 
+    /**
+     * Words that mean the line is an add-on, not the base game. The index holds ranked base games
+     * only, so "Rush M.D. ICU Expansion" at $7.99 must never be scored against Rush M.D.'s $41.98
+     * median — that reads as 81% off and is nothing of the kind.
+     */
+    private val ADDON = setOf(
+        "expansion", "expansions", "exp", "promo", "promos", "pack", "packs", "minipack",
+        "upgrade", "upgrades", "kit", "accessory", "accessories", "sleeves", "sleeve",
+        "playmat", "playmats", "mat", "insert", "inserts", "organizer", "organiser",
+        "miniatures", "minis", "meeples", "tokens", "dice", "bag", "bundle", "addon",
+        "supplement", "scenario", "scenarios", "module", "modules", "deck", "booster",
+        "replacement", "sticker", "stickers", "poster", "shirt", "puzzle"
+    )
+
     // Unicode-aware: "Cóatl" must stay one word, not split into "C" and "atl".
     private val WORD_SPLIT = Regex("[^\\p{L}\\p{N}'&:.\u2013-]+")
 
@@ -56,6 +70,20 @@ object Matcher {
 
     private fun area(r: Rect) = r.width().toLong() * r.height().toLong()
 
+    /**
+     * Lines naming an add-on. They are not matched as games, but they are still product rows, so
+     * they act as barriers: a price below "Rush M.D. ICU Expansion" belongs to the expansion and
+     * must not travel upwards to the Rush M.D. heading above it.
+     */
+    fun addonBarriers(lines: List<OcrLine>): List<Rect> {
+        val out = ArrayList<Rect>()
+        for (l in lines) {
+            val words = l.text.split(WORD_SPLIT)
+            if (words.any { GameIndex.normalize(it) in ADDON }) out.add(l.box)
+        }
+        return out
+    }
+
     private fun matchLine(line: OcrLine): Hit? {
         val words = line.text.split(WORD_SPLIT).filter { it.isNotBlank() }
         if (words.isEmpty()) return null
@@ -67,7 +95,9 @@ object Matcher {
                 val norm = GameIndex.normalize(phrase)
                 if (norm.length < 3 || norm in PAGE_CHROME) continue
                 val g = GameIndex.exact(norm) ?: continue
-                if (!acceptable(g, size, norm, size == words.size)) continue
+                val wholeLine = size == words.size
+                if (!acceptable(g, size, norm, wholeLine)) continue
+                if (!wholeLine && isAddonLine(words, start, size, g)) continue
                 return Hit(g, line.box, phrase, 1.0)
             }
         }
@@ -117,6 +147,24 @@ object Matcher {
         if (wordCount == 1 && norm.length < 9) return g.users >= 1000
         if (g.users < 50) return wordCount >= 2 && norm.length >= 10
         return true
+    }
+
+    /**
+     * True when the leftover words around a sub-line match mark it as an add-on. Words already
+     * inside the game's own title do not count — "Dominion: Guilds" is an expansion by nature, and
+     * a game legitimately called "Booster Pack" should still match itself.
+     */
+    private fun isAddonLine(words: List<String>, start: Int, size: Int, g: Game): Boolean {
+        val ownWords = g.name.split(WORD_SPLIT)
+            .mapNotNull { GameIndex.normalize(it).takeIf { n -> n.isNotEmpty() } }
+            .toSet()
+        for (i in words.indices) {
+            if (i >= start && i < start + size) continue
+            val w = GameIndex.normalize(words[i])
+            if (w.isEmpty() || w in ownWords) continue
+            if (w in ADDON) return true
+        }
+        return false
     }
 
     fun similarity(a: String, b: String): Double {

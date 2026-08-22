@@ -87,6 +87,7 @@ object PriceFinder {
         hits: List<Hit>,
         prices: List<PriceTag>,
         badges: List<DiscountTag>,
+        barriers: List<Rect>,
         screenW: Int,
         screenH: Int
     ): Map<String, PriceEvidence> {
@@ -96,12 +97,12 @@ object PriceFinder {
         val badgeByHit = HashMap<String, MutableList<Int>>()
 
         for (p in prices) {
-            nearestHit(p.box, hits, screenW, screenH)?.let {
+            nearestHit(p.box, hits, barriers, screenW, screenH)?.let {
                 byHit.getOrPut(it.game.id) { ArrayList(4) }.add(p)
             }
         }
         for (b in badges) {
-            nearestHit(b.box, hits, screenW, screenH)?.let {
+            nearestHit(b.box, hits, barriers, screenW, screenH)?.let {
                 badgeByHit.getOrPut(it.game.id) { ArrayList(2) }.add(b.percent)
             }
         }
@@ -134,7 +135,7 @@ object PriceFinder {
      * Nearest title to a money token. Being below a title is the normal layout, so distance
      * upwards is penalised heavily — that keeps a tile's price from binding to the title beneath it.
      */
-    private fun nearestHit(box: Rect, hits: List<Hit>, screenW: Int, screenH: Int): Hit? {
+    private fun nearestHit(box: Rect, hits: List<Hit>, barriers: List<Rect>, screenW: Int, screenH: Int): Hit? {
         val maxDist = 0.20f * screenH
         var best: Hit? = null
         var bestScore = Float.MAX_VALUE
@@ -149,9 +150,25 @@ object PriceFinder {
             }
             val dx = if (cx in b.left..b.right) 0f else minOf(abs(cx - b.left), abs(cx - b.right)).toFloat()
             if (dx > maxOf(0.45f * screenW, b.width().toFloat())) continue
+            if (blocked(box, b, barriers)) continue
             val score = dy + dx * 0.6f
             if (score < maxDist && score < bestScore) { bestScore = score; best = h }
         }
         return best
+    }
+
+    /** True when an add-on row sits between the money token and this title. */
+    private fun blocked(price: Rect, title: Rect, barriers: List<Rect>): Boolean {
+        if (barriers.isEmpty()) return false
+        val lo = minOf(price.centerY(), title.centerY())
+        val hi = maxOf(price.centerY(), title.centerY())
+        for (bar in barriers) {
+            val by = bar.centerY()
+            if (by <= lo || by >= hi) continue
+            val overlaps = bar.right > minOf(price.left, title.left) &&
+                bar.left < maxOf(price.right, title.right)
+            if (overlaps) return true
+        }
+        return false
     }
 }

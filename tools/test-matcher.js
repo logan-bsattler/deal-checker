@@ -4,6 +4,7 @@ const norm=s=>{let out=s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().r
   if(lower.startsWith('the ')){const alt=norm(s.trim().substring(4)); if(alt.length>=3) out=alt;}
   return out;};
 const CHROME=new Set('checkout privacy terms contact wishlist cart account login logout register signin signup search filter filters sort home menu help support reviews review shipping returns refund sale clearance categories category collections collection brands brand blog news events about careers sitemap newsletter giftcards giftcard bestsellers bestseller featured trending popular preorder preorders instock soldout outofstock quickview notifyme comparesimilar addtocart buynow viewall seeall showmore loadmore continue checkoutnow subtotal total quantity description details specifications shippingpolicy privacypolicy termsofservice contactus aboutus myaccount orderhistory trackorder'.split(' '));
+const ADDON=new Set('expansion expansions exp promo promos pack packs minipack upgrade upgrades kit accessory accessories sleeves sleeve playmat playmats mat insert inserts organizer organiser miniatures minis meeples tokens dice bag bundle addon supplement scenario scenarios module modules deck booster replacement sticker stickers poster shirt puzzle'.split(' '));
 const STOP=new Set("the a an of and or to in on for with game board edition new sale off free add cart price shipping buy now from by your you all out stock save deal deals".split(' '));
 
 // index
@@ -19,6 +20,11 @@ for(let i=1;i<lines.length;i++){const p=lines[i].split('\t'); if(p.length<7)cont
 const owned=new Set(JSON.parse(fs.readFileSync('../app/src/main/assets/owned.json','utf8')).map(norm));
 const medians=new Map(JSON.parse(fs.readFileSync('../app/src/main/assets/medians.json','utf8')).map(([n,v])=>[norm(n),v]));
 
+function isAddon(words,start,size,g){
+  const own=new Set(g.name.split(/[^\p{L}\p{N}'&:.\u2013-]+/u).map(norm).filter(Boolean));
+  for(let i=0;i<words.length;i++){ if(i>=start&&i<start+size)continue;
+    const w=norm(words[i]); if(!w||own.has(w))continue; if(ADDON.has(w))return true; }
+  return false;}
 function acceptable(g,wc,n,whole){
   if(n.length<=3) return whole&&g.rank>=1&&g.rank<=300&&g.users>=20000;
   if(whole){ if(n.length<=5) return g.users>=300; return g.users>=150; }
@@ -40,7 +46,9 @@ function matchLine(text){
       const n=norm(phrase); if(n.length<3||CHROME.has(n))continue;
       if(!byNorm.has(n))continue;
       const g=games[byNorm.get(n)];
-      if(!acceptable(g,size,n,size===words.length))continue;
+      const wholeLine=size===words.length;
+      if(!acceptable(g,size,n,wholeLine))continue;
+      if(!wholeLine&&isAddon(words,s,size,g))continue;
       return {g,conf:1,matched:phrase};
     }
   }

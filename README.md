@@ -109,4 +109,8 @@ Turn the whole thing off with the checkbox on the main screen; the app then stay
 - Games BGG hasn't ranked don't exist in the index. They'd fail the rank bar anyway.
 - Titles with fewer than 150 ratings are ignored to keep site furniture from matching obscure
   namesakes. Those also can't clear the rank bar.
+- Expansions are filtered by keyword (`Expansion`, `Promo`, `Playmat`, `Sleeves`, …), and an add-on
+  row also blocks its price from drifting up to the base game above it. Expansions whose names carry
+  no such word — *Ark Nova: Marine Worlds*, *Terraforming Mars Prelude* — still match the base game,
+  because the index holds ranked base games only and has nothing to recognise them by.
 - The result panel blocks touches until you dismiss it. Tap anywhere or the ✕.

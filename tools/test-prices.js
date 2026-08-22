@@ -1,4 +1,5 @@
 const t=require('./test-matcher.js');
+module.exports={};
 const W=1080,H=2400;
 const R=(l,tp,r,b)=>({left:l,top:tp,right:r,bottom:b,centerX:()=>(l+r)/2,centerY:()=>(tp+b)/2,width:()=>r-l});
 
@@ -15,16 +16,22 @@ function pricesIn(lines){const out=[];for(const l of lines){if(RE_NOT_PRICE.test
 function discountsIn(lines){const out=[];for(const l of lines){if(RE_NOT.test(l.text))continue;
   if(!(l.text.includes('-')||/off/i.test(l.text)||RE_SAVE.test(l.text)))continue;
   RE_PERCENT.lastIndex=0;let m;while((m=RE_PERCENT.exec(l.text))){const p=+m[1];if(p>=15&&p<=95)out.push({percent:p,box:l.box});}}return out;}
-function nearest(box,hits){const maxD=0.20*H;let best=null,bs=1e9;const cx=box.centerX(),cy=box.centerY();
- for(const h of hits){const b=h.box;
+const ADDON2=new Set("expansion expansions exp promo promos pack packs minipack upgrade upgrades kit accessory accessories sleeves sleeve playmat playmats mat insert inserts organizer organiser miniatures minis meeples tokens dice bag bundle addon supplement scenario scenarios module modules deck booster replacement sticker stickers poster shirt puzzle".split(' '));
+const nrm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function barriersOf(lines){return lines.filter(l=>l.text.split(/[^\p{L}\p{N}'&:.\u2013-]+/u).some(w=>ADDON2.has(nrm(w)))).map(l=>l.box);}
+function blocked(price,title,bars){const lo=Math.min(price.centerY(),title.centerY()),hi=Math.max(price.centerY(),title.centerY());
+ for(const b of bars){const by=b.centerY(); if(by<=lo||by>=hi)continue;
+  if(b.right>Math.min(price.left,title.left)&&b.left<Math.max(price.right,title.right))return true;} return false;}
+function nearest(box,hits,bars){const maxD=0.20*H;let best=null,bs=1e9;const cx=box.centerX(),cy=box.centerY();
+ for(const h of hits){const b=h.box; if(blocked(box,b,bars||[]))continue;
   const dy=cy>b.bottom?(cy-b.bottom):(cy<b.top?(b.top-cy)*2.5:0);
   const dx=(cx>=b.left&&cx<=b.right)?0:Math.min(Math.abs(cx-b.left),Math.abs(cx-b.right));
   if(dx>Math.max(0.45*W,b.width()))continue;
   const sc=dy+dx*0.6; if(sc<maxD&&sc<bs){bs=sc;best=h;}}
  return best;}
-function attach(hits,prices,badges){const byHit={},bg={};
- for(const p of prices){const h=nearest(p.box,hits);if(h)(byHit[h.g.id]=byHit[h.g.id]||[]).push(p);}
- for(const b of badges){const h=nearest(b.box,hits);if(h)(bg[h.g.id]=bg[h.g.id]||[]).push(b.percent);}
+function attach(hits,prices,badges,bars){const byHit={},bg={};
+ for(const p of prices){const h=nearest(p.box,hits,bars);if(h)(byHit[h.g.id]=byHit[h.g.id]||[]).push(p);}
+ for(const b of badges){const h=nearest(b.box,hits,bars);if(h)(bg[h.g.id]=bg[h.g.id]||[]).push(b.percent);}
  const out={};
  for(const h of hits){const tags=byHit[h.g.id]||[];const badge=bg[h.g.id]?Math.max(...bg[h.g.id]):null;
   const sales=tags.filter(x=>!x.isList).map(x=>x.value), listed=tags.filter(x=>x.isList).map(x=>x.value);
@@ -51,7 +58,7 @@ function verdict(g,ev){
 function run(name,lines){
  const hits=[];
  for(const l of lines){const m=t.matchLine(l.text); if(m) hits.push({g:m.g,box:l.box});}
- const ev=attach(hits,pricesIn(lines),discountsIn(lines));
+ const ev=attach(hits,pricesIn(lines),discountsIn(lines),barriersOf(lines));
  console.log('\n=== '+name+' ===');
  for(const h of hits){const e=ev[h.g.id];const v=verdict(h.g,e);
   console.log('  '+h.g.name.padEnd(26),'price',String(e.price).padEnd(7),'list',String(e.list).padEnd(7),'badge',String(e.badge).padEnd(5),'->',JSON.stringify(v));}
@@ -97,4 +104,17 @@ run('clearance list, bare prices',[
  {text:'$24.97',box:R(60,550,300,590)},
  {text:'Millennium Blades',box:R(60,700,600,740)},
  {text:'$48.00',box:R(60,750,300,790)},
+]);
+
+// --- the Greater Than Games cart: a base game directly above its own expansion ---
+run('cart with an expansion row',[
+ {text:'Artipia Games',box:R(220,1040,700,1080)},
+ {text:'Rush M.D.',box:R(220,1100,700,1160)},
+ {text:'$41.98',box:R(220,1180,500,1220)},
+ {text:'Total',box:R(220,1260,400,1300)},
+ {text:'$41.98',box:R(220,1320,500,1360)},
+ {text:'Rush M.D. ICU Expansion',box:R(220,1600,900,1660)},
+ {text:'$7.99',box:R(220,1680,500,1720)},
+ {text:'Total',box:R(220,1760,400,1800)},
+ {text:'$7.99',box:R(220,1820,500,1860)},
 ]);

@@ -135,8 +135,8 @@ object ResultPanel {
             val bits = ArrayList<String>()
             bits.add("BGG %.1f".format(g.rating))
             bits.add("rank #${g.rank}")
-            v.price?.let { bits.add("seen $" + "%.2f".format(it)) }
-            v.baseline?.let { bits.add("vs $" + "%.2f".format(it)) }
+            v.price?.let { bits.add("on page $" + "%.2f".format(it)) }
+            v.baseline?.let { bits.add("normally $" + "%.2f".format(it)) }
             v.discount?.let { bits.add("$it% off") }
             text = bits.joinToString("   ")
             setTextColor(Color.parseColor("#CFD3D6"))

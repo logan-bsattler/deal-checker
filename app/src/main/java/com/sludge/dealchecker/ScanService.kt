@@ -259,7 +259,8 @@ class ScanService : Service() {
                 val hits = Matcher.match(lines)
                 val prices = PriceFinder.pricesIn(lines)
                 val badges = PriceFinder.discountsIn(lines)
-                val evidence = PriceFinder.attach(hits, prices, badges, bmp.width, bmp.height)
+                val barriers = Matcher.addonBarriers(lines)
+                val evidence = PriceFinder.attach(hits, prices, badges, barriers, bmp.width, bmp.height)
                 lastHits = hits
                 lastEvidence = evidence
                 bmp.recycle()
