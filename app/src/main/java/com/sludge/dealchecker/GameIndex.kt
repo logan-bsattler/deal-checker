@@ -6,7 +6,6 @@ import org.json.JSONArray
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
-import java.util.zip.GZIPInputStream
 
 /** One ranked BoardGameGeek title. */
 data class Game(
@@ -30,7 +29,7 @@ data class Game(
 object GameIndex {
 
     private const val TAG = "GameIndex"
-    private const val GAMES_ASSET = "games.tsv.gz"
+    private const val GAMES_ASSET = "games.tsv"
 
     val games = ArrayList<Game>(32000)
     private val byNorm = HashMap<String, Int>(48000)
@@ -92,7 +91,7 @@ object GameIndex {
         if (!present.contains(GAMES_ASSET)) {
             throw java.io.FileNotFoundException("$GAMES_ASSET missing; assets present: $present")
         }
-        BufferedReader(InputStreamReader(GZIPInputStream(ctx.assets.open(GAMES_ASSET)), Charsets.UTF_8)).use { r ->
+        BufferedReader(InputStreamReader(ctx.assets.open(GAMES_ASSET), Charsets.UTF_8), 1 shl 16).use { r ->
             r.readLine() // header
             var line = r.readLine()
             while (line != null) {

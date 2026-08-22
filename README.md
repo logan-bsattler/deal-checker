@@ -36,7 +36,7 @@ data is baked into the APK — the app only touches the network if you tap *Refr
 
 | File | What it is |
 |---|---|
-| `assets/games.tsv.gz` | 31,131 ranked BGG titles (name, year, rank, rating, ratings count) — the 2026‑08‑21 ranking snapshot |
+| `assets/games.tsv` | 31,131 ranked BGG titles (name, year, rank, rating, ratings count) — the 2026‑08‑21 ranking snapshot |
 | `assets/owned.json` | Your 132 owned titles, from the deal tracker's `OWNED` array |
 | `assets/medians.json` | 82 cross-store median prices, from the tracker's `ALL_DEALS` rows |
 
@@ -67,7 +67,7 @@ no baseline for that title.
   copy wins over the bundled one from then on.
 - **BGG index**: swap in a newer dump from
   `raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master/YYYY-MM-DD.csv` and rebuild
-  `games.tsv.gz` with `tools/build-index.js`.
+   `games.tsv` with `tools/build-index.js`.
 
 ## Known limits
 
