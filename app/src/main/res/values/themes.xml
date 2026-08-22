@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.DealChecker" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2F5C28</item>
+    </style>
+</resources>
