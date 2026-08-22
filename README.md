@@ -102,6 +102,19 @@ Turn the whole thing off with the checkbox on the main screen; the app then stay
   `raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master/YYYY-MM-DD.csv` and rebuild
    `games.tsv` with `tools/build-index.js`.
 
+## The MediaProjection start-up order
+
+On Android 14+ a `mediaProjection` foreground service needs the `android:project_media` app op, and
+that op is only granted once `getMediaProjection()` consumes the consent token. So the order is:
+
+1. `getMediaProjection(resultCode, data)` — grants the app op (no foreground service needed yet)
+2. `startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)` — legal now
+3. `createVirtualDisplay(...)` — *this* is the call that requires the service to already be foreground
+
+Calling `startForeground` first throws `SecurityException`. The service also declares `specialUse`
+purely so the give-up path can still reach `startForeground` before the system's few-second deadline
+when the projection could not be obtained.
+
 ## Known limits
 
 - Ranks and ratings are a snapshot, so a game sitting right on the 2,500 line may read differently

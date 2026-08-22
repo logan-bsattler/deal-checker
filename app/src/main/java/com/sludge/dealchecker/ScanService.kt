@@ -88,14 +88,12 @@ class ScanService : Service() {
         if (running) return START_STICKY
 
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        startForegroundNotification()
 
         val code = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
         val data: Intent? = intent?.getParcelableExtra(EXTRA_DATA)
         if (code == 0 || data == null) {
-            toast("Screen capture permission missing — open Deal Checker and start again")
-            stopSelf()
+            bailOut("Screen capture permission missing — open Deal Checker and start again")
             return START_NOT_STICKY
         }
 
@@ -106,10 +104,15 @@ class ScanService : Service() {
             Log.e(TAG, "getMediaProjection: ${e.message}"); null
         }
         if (p == null) {
-            toast("Could not start screen capture")
-            stopSelf()
+            bailOut("Could not start screen capture — try starting the bubble again")
             return START_NOT_STICKY
         }
+
+        // Only now does this app hold the android:project_media app op, which is what makes a
+        // mediaProjection foreground service legal. Calling startForeground before this point
+        // throws SecurityException on Android 14+.
+        startForegroundNotification(mediaProjection = true)
+
         projection = p
         p.registerCallback(projectionCallback, main)
 
@@ -405,7 +408,19 @@ class ScanService : Service() {
 
     // ---------- lifecycle ----------
 
-    private fun startForegroundNotification() {
+    /**
+     * A service launched with startForegroundService must reach startForeground within seconds or
+     * the system kills the process — so even the give-up path has to go foreground briefly, and it
+     * uses specialUse because the projection op is exactly what we failed to get.
+     */
+    private fun bailOut(message: String) {
+        startForegroundNotification(mediaProjection = false)
+        toast(message)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun startForegroundNotification(mediaProjection: Boolean) {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
@@ -425,7 +440,14 @@ class ScanService : Service() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            val type = when {
+                mediaProjection -> android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                // specialUse only exists from API 34; below that an untyped foreground is fine,
+                // because the app-op requirement this path exists to dodge arrived in 34 too.
+                Build.VERSION.SDK_INT >= 34 -> android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                else -> 0
+            }
+            startForeground(NOTIF_ID, n, type)
         } else {
             startForeground(NOTIF_ID, n)
         }
