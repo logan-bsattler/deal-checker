@@ -1,5 +1,6 @@
 package com.sludge.dealchecker
 
+import android.content.Context
 import kotlin.math.roundToInt
 
 enum class Tier { BUY, NEAR, PASS, OWNED, NO_BASELINE, NO_PRICE }
@@ -28,10 +29,48 @@ data class Verdict(
  * The card always names which one was used, because a 60% discount off invented MSRP is not a deal.
  */
 object Rules {
-    const val MIN_RATING = 7.0
-    const val MAX_RANK = 2500
-    const val MIN_DISCOUNT = 50
-    const val NEAR_DISCOUNT = 35
+
+    /** The deal tracker's own bars, and what "Reset" restores. */
+    const val DEFAULT_RATING = 7.0
+    const val DEFAULT_RANK = 2500
+    const val DEFAULT_DISCOUNT = 50
+
+    private const val PREFS = "dealchecker"
+
+    var MIN_RATING = DEFAULT_RATING
+        private set
+    var MAX_RANK = DEFAULT_RANK
+        private set
+    var MIN_DISCOUNT = DEFAULT_DISCOUNT
+        private set
+
+    /** The near-miss band tracks the buy bar rather than being set separately. */
+    val NEAR_DISCOUNT: Int get() = maxOf(5, MIN_DISCOUNT - 15)
+
+    val isDefault: Boolean
+        get() = MIN_RATING == DEFAULT_RATING && MAX_RANK == DEFAULT_RANK && MIN_DISCOUNT == DEFAULT_DISCOUNT
+
+    fun load(ctx: Context) {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        MIN_RATING = p.getFloat("minRating", DEFAULT_RATING.toFloat()).toDouble()
+        MAX_RANK = p.getInt("maxRank", DEFAULT_RANK)
+        MIN_DISCOUNT = p.getInt("minDiscount", DEFAULT_DISCOUNT)
+    }
+
+    fun save(ctx: Context, rating: Double, rank: Int, discount: Int) {
+        MIN_RATING = rating
+        MAX_RANK = rank
+        MIN_DISCOUNT = discount
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putFloat("minRating", rating.toFloat())
+            .putInt("maxRank", rank)
+            .putInt("minDiscount", discount)
+            .apply()
+    }
+
+    /** One line describing the bars in force, used on the main screen and in the panel. */
+    fun summary(): String =
+        "BGG ≥ %.1f, rank < %,d, ≥ %d%% off the median, not already owned".format(MIN_RATING, MAX_RANK, MIN_DISCOUNT)
 
     fun evaluate(g: Game, ev: PriceEvidence?): Verdict {
         val price = ev?.price

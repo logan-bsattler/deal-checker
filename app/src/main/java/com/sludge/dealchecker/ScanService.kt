@@ -168,6 +168,7 @@ class ScanService : Service() {
         addBubble()
         running = true
 
+        Rules.load(applicationContext)
         Thread {
             MedianCache.load(applicationContext)
             GameIndex.load(applicationContext)
@@ -279,6 +280,8 @@ class ScanService : Service() {
 
     private fun scan() {
         if (scanning) return
+        // Pick up any threshold change made in the app since the bubble started.
+        Rules.load(applicationContext)
         if (!GameIndex.ready) { toast("Still loading the BGG index…"); return }
         scanning = true
         removeOverlay()
@@ -442,7 +445,7 @@ class ScanService : Service() {
         panel.addView(head)
 
         panel.addView(TextView(this).apply {
-            text = "BGG ≥ ${Rules.MIN_RATING}, rank < ${Rules.MAX_RANK}, ≥ ${Rules.MIN_DISCOUNT}% off the median, not already owned"
+            text = Rules.summary()
             setTextColor(Color.parseColor("#8A9094"))
             textSize = 10f
             setPadding(0, px(2f), 0, px(8f))

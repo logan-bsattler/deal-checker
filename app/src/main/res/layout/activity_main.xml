@@ -71,6 +71,57 @@
             android:layout_marginTop="8dp"
             android:text="Stop the bubble" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="What counts as a good buy"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/lblRating"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/barRating"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="25" />
+
+        <TextView
+            android:id="@+id/lblRank"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/barRank"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="39" />
+
+        <TextView
+            android:id="@+id/lblDiscount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/barDiscount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="12" />
+
+        <Button
+            android:id="@+id/btnResetRules"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Reset to the tracker's bars" />
+
         <CheckBox
             android:id="@+id/liveLookup"
             android:layout_width="match_parent"

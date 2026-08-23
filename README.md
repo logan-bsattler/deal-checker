@@ -7,7 +7,13 @@ board game titles, and tells you whether each one is a good buy — using the sa
 **Good buy** = BGG rating ≥ 7.0 · BGG rank under 2,500 · at least 50% off the cross-store median ·
 not already in your collection.
 
-Anything 35–49% off is shown as a **near miss** rather than dropped, so you can see what nearly made it.
+Anything within 15 points of the discount bar is shown as a **near miss** rather than dropped, so you
+can see what nearly made it.
+
+All three bars are adjustable on the main screen — rating 6.0–8.5, rank 250–10,000, discount 20–80%
+— and a **Reset** button puts them back to the tracker's. The near-miss band follows the discount bar
+rather than being set on its own. Changes apply to the next scan without restarting the bubble, and
+the panel header always states the bars actually in force.
 
 ## Getting the APK
 

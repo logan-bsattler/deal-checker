@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -37,10 +38,8 @@ class MainActivity : AppCompatActivity() {
         dbInfo = findViewById(R.id.dbInfo)
         urlField = findViewById(R.id.medianUrl)
 
-        findViewById<TextView>(R.id.rules).text =
-            "A good buy means BGG rating ≥ ${Rules.MIN_RATING}, BGG rank under ${Rules.MAX_RANK}, " +
-            "at least ${Rules.MIN_DISCOUNT}% off the cross-store median, and not already in your collection. " +
-            "Same bars as the deal tracker."
+        Rules.load(applicationContext)
+        setUpThresholds()
 
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         urlField.setText(prefs.getString(KEY_URL, ""))
@@ -80,6 +79,66 @@ class MainActivity : AppCompatActivity() {
             GameIndex.load(applicationContext)
             runOnUiThread { showDbInfo() }
         }.start()
+    }
+
+    // Slider positions map to values: rating 6.0–8.5 by 0.1, rank 250–10,000 by 250,
+    // discount 20–80% by 5.
+    private fun ratingOf(p: Int) = Math.round((6.0 + p * 0.1) * 10.0) / 10.0
+    private fun rankOf(p: Int) = (p + 1) * 250
+    private fun discountOf(p: Int) = 20 + p * 5
+
+    private fun setUpThresholds() {
+        val rules = findViewById<TextView>(R.id.rules)
+        val lblRating = findViewById<TextView>(R.id.lblRating)
+        val lblRank = findViewById<TextView>(R.id.lblRank)
+        val lblDiscount = findViewById<TextView>(R.id.lblDiscount)
+        val barRating = findViewById<SeekBar>(R.id.barRating)
+        val barRank = findViewById<SeekBar>(R.id.barRank)
+        val barDiscount = findViewById<SeekBar>(R.id.barDiscount)
+
+        fun redraw() {
+            lblRating.text = "BGG rating at least %.1f".format(ratingOf(barRating.progress))
+            lblRank.text = "BGG rank better than #%,d".format(rankOf(barRank.progress))
+            lblDiscount.text = "At least ${discountOf(barDiscount.progress)}% off the baseline" +
+                "   ·   near miss from ${maxOf(5, discountOf(barDiscount.progress) - 15)}%"
+            rules.text = Rules.summary() +
+                if (Rules.isDefault) "\nSame bars as the deal tracker." else "\nCustomised — the tracker uses 7.0 / 2,500 / 50%."
+        }
+
+        fun commit() {
+            Rules.save(
+                applicationContext,
+                ratingOf(barRating.progress),
+                rankOf(barRank.progress),
+                discountOf(barDiscount.progress)
+            )
+            redraw()
+        }
+
+        fun positions() {
+            barRating.progress = Math.round((Rules.MIN_RATING - 6.0) / 0.1).toInt().coerceIn(0, barRating.max)
+            barRank.progress = (Rules.MAX_RANK / 250 - 1).coerceIn(0, barRank.max)
+            barDiscount.progress = ((Rules.MIN_DISCOUNT - 20) / 5).coerceIn(0, barDiscount.max)
+        }
+
+        val listener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) = redraw()
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) = commit()
+        }
+        barRating.setOnSeekBarChangeListener(listener)
+        barRank.setOnSeekBarChangeListener(listener)
+        barDiscount.setOnSeekBarChangeListener(listener)
+
+        findViewById<Button>(R.id.btnResetRules).setOnClickListener {
+            Rules.save(applicationContext, Rules.DEFAULT_RATING, Rules.DEFAULT_RANK, Rules.DEFAULT_DISCOUNT)
+            positions()
+            redraw()
+            toast("Back to the tracker's bars")
+        }
+
+        positions()
+        redraw()
     }
 
     /** A sideloaded build has no adb attached, so the last stack trace is shown in the app. */
