@@ -127,6 +127,25 @@ Layer 3 is what catches expansions with no punctuation and no keyword, like *Ter
 Prelude*. With live lookup switched off it cannot run, so those partial matches are kept and the
 card says "found inside …  — check it is the base game" rather than pretending to be sure.
 
+## Drilling into a result
+
+Tapping a card opens a detail sheet for that game:
+
+- **The game** — BGG rating and how many ratings back it, rank, whether you own it, and (from
+  Oracle) player count, play time, minimum age and publisher.
+- **This listing** — what was on the page, what it was measured against and which basis, the
+  discount.
+- **Every store** — cheapest right now and where, the cross-store median and how many offers it
+  rests on, the 30-day and 52-week lows (flagged when the current price *is* the 52-week floor),
+  then every merchant with price, stock and shipping terms.
+
+Buttons open the game's Board Game Oracle and BoardGameGeek pages in the browser.
+
+The top half draws instantly from the bundled index and the scan that just ran; the store table
+arrives when Oracle answers. Oracle's key is cached from the median lookup, so opening a game that
+has already been priced skips the search step. Scroll-triggered rescans pause while the sheet is
+open, so the results underneath cannot change out from under it.
+
 ## Scrolling with the panel open
 
 The overlay is two windows, not one. The highlight layer is `FLAG_NOT_TOUCHABLE`, so touches fall

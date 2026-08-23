@@ -19,7 +19,7 @@ object MedianCache {
     private const val TTL_HIT = 7 * DAY_MS
     private const val TTL_MISS = 3 * DAY_MS
 
-    private data class Entry(val median: Double, val at: Long)
+    private data class Entry(val median: Double, val at: Long, val key: String?)
 
     private val map = HashMap<String, Entry>()
     private var loaded = false
@@ -34,7 +34,7 @@ object MedianCache {
             val o = JSONObject(f.readText())
             for (k in o.keys()) {
                 val e = o.getJSONObject(k)
-                map[k] = Entry(e.getDouble("m"), e.optLong("t", 0L))
+                map[k] = Entry(e.getDouble("m"), e.optLong("t", 0L), e.optString("k").ifEmpty { null })
             }
             Log.i(TAG, "loaded ${map.size} learned medians")
         } catch (e: Exception) {
@@ -58,9 +58,13 @@ object MedianCache {
         return now - e.at <= ttl
     }
 
+    /** Oracle's key for this game, so the detail view can skip the search step. */
     @Synchronized
-    fun put(ctx: Context, norm: String, median: Double?) {
-        map[norm] = Entry(median ?: -1.0, System.currentTimeMillis())
+    fun keyFor(norm: String): String? = map[norm]?.key
+
+    @Synchronized
+    fun put(ctx: Context, norm: String, median: Double?, key: String? = null) {
+        map[norm] = Entry(median ?: -1.0, System.currentTimeMillis(), key ?: map[norm]?.key)
         save(ctx)
     }
 
@@ -70,7 +74,9 @@ object MedianCache {
     private fun save(ctx: Context) {
         try {
             val o = JSONObject()
-            for ((k, v) in map) o.put(k, JSONObject().put("m", v.median).put("t", v.at))
+            for ((k, v) in map) o.put(
+                k, JSONObject().put("m", v.median).put("t", v.at).put("k", v.key ?: "")
+            )
             File(ctx.filesDir, FILE).writeText(o.toString())
         } catch (e: Exception) {
             Log.w(TAG, "save failed: ${e.message}")

@@ -1,19 +1,54 @@
 package com.sludge.dealchecker
 
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+/** One store's listing for a game. */
+data class Offer(
+    val store: String,
+    val listingName: String,
+    val price: Double,
+    val inStock: Boolean,
+    val shipping: String?
+)
+
+/** Everything Oracle knows about a game, as far as this app cares. */
+data class OracleGame(
+    val key: String,
+    val slug: String,
+    val title: String,
+    val year: Int?,
+    val bggId: Int?,
+    val median: Double?,
+    val lowest: Double?,
+    val lowestStore: String?,
+    val low30: Double?,
+    val low52: Double?,
+    val highest: Double?,
+    val offerCount: Int,
+    val minPlayers: Int?,
+    val maxPlayers: Int?,
+    val minTime: Int?,
+    val maxTime: Int?,
+    val minAge: Int?,
+    val publisher: String?
+) {
+    val pageUrl: String get() = "https://www.boardgameoracle.com/boardgame/price/$key/$slug"
+}
+
 /**
- * Cross-store medians from Board Game Oracle — the same source the deal tracker uses.
+ * Cross-store prices from Board Game Oracle — the same source the deal tracker uses.
  *
  * Their site is a tRPC app, so there is a plain JSON API behind it:
- *   boardgame.list?input={"region":"us","q":"<name>"}   → candidates (title, year, key)
- *   boardgame.get?input={"region":"us","key":"<key>"}   → bgg_id + price_stats
+ *   boardgame.list?input={"region":"us","q":"<name>"}   → candidates (title, year, key, type)
+ *   boardgame.get?input={"region":"us","key":"<key>"}   → bgg_id, price_stats, player/time detail
+ *   price.list?input={"key":"<key>","region":"us"}      → every merchant's current offer
  *
- * The second call returns the BGG id, which is what makes this trustworthy: a candidate is only
+ * boardgame.get returns the BGG id, which is what makes this trustworthy: a candidate is only
  * accepted when its bgg_id equals the one in our index. Name matching alone is not good enough —
  * an Oracle search for "Terra Nova" returns both the 2006 and 2022 games, and the tracker has been
  * bitten by picking the wrong one before.
@@ -25,17 +60,22 @@ object Oracle {
     private const val MAX_CANDIDATES = 4
 
     /**
-     * A median drawn from one or two listings is not a market price. Bruxelles 1897 currently shows
-     * a $9.00 "median" off two offers — measuring a discount against that would be nonsense.
+     * A median drawn from one or two listings is not a market price. Bruxelles 1897 has shown a
+     * $9.00 "median" off two offers — measuring a discount against that would be nonsense.
      */
     private const val MIN_OFFERS = 3
 
-    /** @return the cross-store median, or null if Oracle has no priced listing for this game. */
+    /** @return the cross-store median, or null when Oracle has too little to say. */
     fun medianFor(game: Game): Double? {
+        val g = resolve(game) ?: return null
+        return if (g.offerCount >= MIN_OFFERS) g.median else null
+    }
+
+    /** Search, then confirm by BGG id. */
+    fun resolve(game: Game): OracleGame? {
         return try {
             val candidates = search(game.name)
             if (candidates.isEmpty()) return null
-            // Try the most plausible candidates first: exact title, then closest year.
             val ordered = candidates.sortedWith(
                 compareBy(
                     { if (GameIndex.normalize(it.title) == game.norm) 0 else 1 },
@@ -43,22 +83,20 @@ object Oracle {
                 )
             )
             for (c in ordered.take(MAX_CANDIDATES)) {
-                val d = detail(c.key) ?: continue
-                if (d.bggId != null && d.bggId.toString() == game.id) {
-                    return if (d.offers >= MIN_OFFERS) d.median else null
-                }
+                val d = byKey(c.key) ?: continue
+                if (d.bggId != null && d.bggId.toString() == game.id) return d
             }
             null
         } catch (e: Exception) {
-            Log.w(TAG, "lookup failed for ${game.name}: ${e.message}")
+            Log.w(TAG, "resolve failed for ${game.name}: ${e.message}")
             null
         }
     }
 
-    private fun yearGap(a: Int?, b: String): Int {
-        val y = b.toIntOrNull() ?: return 99
-        if (a == null) return 98
-        return Math.abs(a - y)
+    fun byKey(key: String): OracleGame? {
+        val body = get("boardgame.get", JSONObject().put("region", "us").put("key", key)) ?: return null
+        val d = body.optJSONObject("result")?.optJSONObject("data") ?: return null
+        return parseGame(d)
     }
 
     /**
@@ -77,8 +115,73 @@ object Oracle {
         }
     }
 
+    /** Every merchant currently listing this game, cheapest first. */
+    fun offers(key: String): List<Offer> {
+        val body = get("price.list", JSONObject().put("key", key).put("region", "us")) ?: return emptyList()
+        val items = body.optJSONObject("result")?.optJSONObject("data")?.optJSONArray("items")
+            ?: return emptyList()
+        val out = ArrayList<Offer>(items.length())
+        for (i in 0 until items.length()) {
+            val o = items.optJSONObject(i) ?: continue
+            val m = o.optJSONObject("merchant")
+            out.add(
+                Offer(
+                    store = m?.optString("short_name")?.ifEmpty { null }
+                        ?: m?.optString("name")?.ifEmpty { null }
+                        ?: o.optString("merchantSlug"),
+                    listingName = o.optString("name"),
+                    price = o.optDouble("price", 0.0),
+                    inStock = o.optString("availability") == "in_stock",
+                    shipping = m?.optJSONObject("shipping")?.optString("short")?.ifEmpty { null }
+                )
+            )
+        }
+        return out.filter { it.price > 0 }.sortedBy { it.price }
+    }
+
+    // ---------- parsing ----------
+
+    private fun parseGame(d: JSONObject): OracleGame {
+        val s = d.optJSONObject("price_stats")
+        val det = d.optJSONObject("detail")
+        val pubs = det?.optJSONArray("publisher")
+        return OracleGame(
+            key = d.optString("key"),
+            slug = d.optString("slug"),
+            title = d.optString("title"),
+            year = num(d, "year_published")?.toInt(),
+            bggId = num(d, "bgg_id")?.toInt(),
+            median = s?.let { num(it, "discount_median_compare_price") }?.takeIf { it > 0 },
+            lowest = s?.let { num(it, "lowest_price") },
+            lowestStore = s?.optString("lowest_store_name")?.ifEmpty { null },
+            low30 = s?.let { num(it, "lowest_30d") },
+            low52 = s?.let { num(it, "lowest_52w") },
+            highest = s?.let { num(it, "highest_price") },
+            offerCount = s?.optInt("offer_count", 0) ?: 0,
+            minPlayers = det?.let { num(it, "min_players") }?.toInt(),
+            maxPlayers = det?.let { num(it, "max_players") }?.toInt(),
+            minTime = det?.let { num(it, "min_play_time") }?.toInt(),
+            maxTime = det?.let { num(it, "max_play_time") }?.toInt(),
+            minAge = det?.let { num(it, "min_age") }?.toInt(),
+            publisher = firstName(pubs)
+        )
+    }
+
+    private fun num(o: JSONObject, k: String): Double? =
+        if (o.has(k) && !o.isNull(k)) o.optDouble(k).takeIf { !it.isNaN() } else null
+
+    private fun firstName(arr: JSONArray?): String? {
+        if (arr == null || arr.length() == 0) return null
+        return arr.optJSONObject(0)?.optString("name")?.ifEmpty { null }
+    }
+
+    private fun yearGap(a: Int?, b: String): Int {
+        val y = b.toIntOrNull() ?: return 99
+        if (a == null) return 98
+        return Math.abs(a - y)
+    }
+
     private data class Candidate(val title: String, val year: Int?, val key: String)
-    private data class Detail(val bggId: Int?, val median: Double?, val offers: Int)
 
     private fun search(name: String): List<Candidate> {
         val body = get("boardgame.list", JSONObject().put("region", "us").put("q", name)) ?: return emptyList()
@@ -98,19 +201,6 @@ object Oracle {
             )
         }
         return out
-    }
-
-    private fun detail(key: String): Detail? {
-        val body = get("boardgame.get", JSONObject().put("region", "us").put("key", key)) ?: return null
-        val d = body.optJSONObject("result")?.optJSONObject("data") ?: return null
-        val bgg = if (d.has("bgg_id") && !d.isNull("bgg_id")) d.optInt("bgg_id") else null
-        val stats = d.optJSONObject("price_stats")
-        val median = stats?.let {
-            if (it.has("discount_median_compare_price") && !it.isNull("discount_median_compare_price"))
-                it.optDouble("discount_median_compare_price") else null
-        }
-        val offers = stats?.optInt("offer_count", 0) ?: 0
-        return Detail(bgg, median?.takeIf { it > 0 }, offers)
     }
 
     private fun get(procedure: String, input: JSONObject): JSONObject? {

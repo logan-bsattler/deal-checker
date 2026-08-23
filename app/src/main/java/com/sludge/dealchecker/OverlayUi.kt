@@ -86,7 +86,7 @@ class HighlightView(ctx: Context) : View(ctx) {
 /** Builds the scrollable verdict list that sits at the bottom of the screen. */
 object ResultPanel {
 
-    fun buildCard(ctx: Context, f: Finding): View {
+    fun buildCard(ctx: Context, f: Finding, onTap: (Finding) -> Unit): View {
         val d = ctx.resources.displayMetrics.density
         fun px(v: Float) = (v * d).toInt()
 
@@ -94,6 +94,8 @@ object ResultPanel {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.card_bg)
             setPadding(px(12f), px(10f), px(12f), px(10f))
+            isClickable = true
+            setOnClickListener { onTap(f) }
         }
         val lp = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -162,6 +164,13 @@ object ResultPanel {
                 setPadding(0, px(3f), 0, 0)
             })
         }
+        card.addView(TextView(ctx).apply {
+            text = "tap for stores and stats ›"
+            setTextColor(Color.parseColor("#6E7478"))
+            textSize = 10f
+            setPadding(0, px(4f), 0, 0)
+        })
+
         if (f.hit.confidence < 0.999) {
             card.addView(TextView(ctx).apply {
                 text = "matched \"${f.hit.matchedText}\" (fuzzy ${(f.hit.confidence * 100).toInt()}%)"

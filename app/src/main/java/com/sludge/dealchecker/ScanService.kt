@@ -73,6 +73,8 @@ class ScanService : Service() {
     private var panelList: LinearLayout? = null
     private var panelHeadline: TextView? = null
     private var panelRect: Rect? = null
+    private var detailWin: View? = null
+    private var detailOracle: OracleGame? = null
 
     private var watching = false
     private var lastMotionAt = 0L
@@ -374,8 +376,9 @@ class ScanService : Service() {
         lookupsInFlight += wanted.size
         for (g in wanted) {
             lookupPool.execute {
-                val m = Oracle.medianFor(g)
-                MedianCache.put(applicationContext, g.norm, m)
+                val resolved = Oracle.resolve(g)
+                val m = resolved?.takeIf { it.offerCount >= 3 }?.median
+                MedianCache.put(applicationContext, g.norm, m, resolved?.key)
                 main.post {
                     lookupsInFlight--
                     if (panelWin != null && lookupsInFlight <= 0) showResults(score())
@@ -520,11 +523,83 @@ class ScanService : Service() {
                 )
             )
         } else {
-            for (f in results) list.addView(ResultPanel.buildCard(this, f))
+            for (f in results) list.addView(ResultPanel.buildCard(this, f) { showDetail(it) })
+        }
+    }
+
+    // ---------- drill-down ----------
+
+    /**
+     * One finding in full: index facts and this listing's numbers immediately, then Oracle's store
+     * table underneath once it answers. Opens as its own window above the panel.
+     */
+    private fun showDetail(f: Finding) {
+        closeDetail()
+        detailOracle = null
+        val m = metrics()
+        val g = f.hit.game
+
+        val (root, stores) = DetailSheet.build(
+            this, f,
+            onClose = { closeDetail() },
+            onOpenOracle = {
+                // Their page URL needs both key and slug, so fall back to a search until the
+                // lookup has come back with the real one.
+                openUrl(
+                    detailOracle?.pageUrl
+                        ?: ("https://www.boardgameoracle.com/search?q=" +
+                            java.net.URLEncoder.encode(g.name, "UTF-8"))
+                )
+            },
+            onOpenBgg = { openUrl("https://boardgamegeek.com/boardgame/${g.id}") }
+        )
+
+        val scroll = ScrollView(this).apply { addView(root) }
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            (m.h * 0.72f).toInt(),
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.BOTTOM }
+
+        detailWin = scroll
+        muteFrames()
+        try { wm.addView(scroll, lp) } catch (e: Exception) { Log.e(TAG, "detail: ${e.message}") }
+
+        lookupPool.execute {
+            val key = MedianCache.keyFor(g.norm) ?: Oracle.resolve(g)?.also {
+                MedianCache.put(applicationContext, g.norm, it.median, it.key)
+            }?.key
+            val og = key?.let { Oracle.byKey(it) }
+            val offers = key?.let { Oracle.offers(it) } ?: emptyList()
+            main.post {
+                detailOracle = og
+                if (detailWin != null) DetailSheet.fillFromOracle(this, root, stores, og, offers)
+            }
+        }
+    }
+
+    private fun closeDetail() {
+        detailWin?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        detailWin = null
+        detailOracle = null
+        muteFrames()
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: Exception) {
+            toast("Couldn't open the browser")
         }
     }
 
     private fun removeOverlay() {
+        closeDetail()
         watching = false
         main.removeCallbacks(motionWatcher)
         highlightWin?.let { try { wm.removeView(it) } catch (_: Exception) {} }
@@ -557,6 +632,7 @@ class ScanService : Service() {
     private val motionWatcher = object : Runnable {
         override fun run() {
             if (panelWin == null) { watching = false; return }
+            if (detailWin != null) { main.postDelayed(this, MOTION_POLL); return }
             val now = android.os.SystemClock.uptimeMillis()
             if (now >= ignoreFramesUntil) {
                 if (capture?.hasNewFrame() == true) {
