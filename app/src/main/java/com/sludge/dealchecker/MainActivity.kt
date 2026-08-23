@@ -130,6 +130,8 @@ class MainActivity : AppCompatActivity() {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7002)
             }
         }
+        // Clear any half-started service first — a leftover instance holds a spent consent token.
+        startService(Intent(this, ScanService::class.java).setAction(ScanService.ACTION_STOP))
         val mpm = getSystemService(MediaProjectionManager::class.java)
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_PROJECTION)
     }

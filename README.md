@@ -119,16 +119,25 @@ amounts, and reading its own output back in would let the app score itself.
 
 ## The MediaProjection start-up order
 
-On Android 14+ a `mediaProjection` foreground service needs the `android:project_media` app op, and
-that op is only granted once `getMediaProjection()` consumes the consent token. So the order is:
+These two calls each appear to require the other to have happened first:
 
-1. `getMediaProjection(resultCode, data)` — grants the app op (no foreground service needed yet)
-2. `startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)` — legal now
-3. `createVirtualDisplay(...)` — *this* is the call that requires the service to already be foreground
+- `startForeground(..., FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)` needs the `android:project_media`
+  app op, or it throws `SecurityException`.
+- `getMediaProjection(resultCode, data)` can refuse when no mediaProjection foreground service is
+  running yet.
 
-Calling `startForeground` first throws `SecurityException`. The service also declares `specialUse`
-purely so the give-up path can still reach `startForeground` before the system's few-second deadline
-when the projection could not be obtained.
+Both orderings have been observed failing on real hardware (Android 15, moto g stylus 5G), so the
+service no longer assumes one. It tries the typed foreground service, falls back to an untyped one
+if that is refused, gets the projection, then upgrades the type — and whichever leg failed is
+written to `last-crash.txt` and shown on the main screen. `createVirtualDisplay` comes last either
+way, since it definitely requires a running foreground service.
+
+The `specialUse` type exists only for those fallback and give-up paths: a service started with
+`startForegroundService` must reach `startForeground` within a few seconds regardless.
+
+The service returns `START_NOT_STICKY`. A consent token is single-use, so a system-initiated restart
+would come back holding a spent one; better to be plainly gone. Starting the bubble also stops any
+previous instance first, for the same reason.
 
 ## Known limits
 

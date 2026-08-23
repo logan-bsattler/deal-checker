@@ -100,7 +100,7 @@ class ScanService : Service() {
             stopEverything()
             return START_NOT_STICKY
         }
-        if (running) return START_STICKY
+        if (running) return START_NOT_STICKY
 
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -112,21 +112,54 @@ class ScanService : Service() {
             return START_NOT_STICKY
         }
 
+        // These two steps each claim to need the other first, and which one the platform actually
+        // enforces varies by version: going foreground first can fail because the project_media app
+        // op is not held yet, while getMediaProjection can fail because no mediaProjection service
+        // is running yet. So try the typed service first, fall back to untyped, and upgrade after.
+        val notes = StringBuilder()
+        var typed = false
+        try {
+            startForegroundNotification(mediaProjection = true)
+            typed = true
+        } catch (e: Exception) {
+            notes.append("typed FGS refused: ${e.javaClass.simpleName}: ${e.message}\n")
+            try {
+                startForegroundNotification(mediaProjection = false)
+            } catch (e2: Exception) {
+                notes.append("untyped FGS refused too: ${e2.javaClass.simpleName}: ${e2.message}\n")
+            }
+        }
+
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val p = try {
             mpm.getMediaProjection(code, data)
         } catch (e: Exception) {
-            Log.e(TAG, "getMediaProjection: ${e.message}"); null
+            notes.append("getMediaProjection: ${e.javaClass.simpleName}: ${e.message}\n")
+            Log.e(TAG, "getMediaProjection failed", e)
+            null
         }
         if (p == null) {
-            bailOut("Could not start screen capture — try starting the bubble again")
+            recordStartupProblem(notes.toString())
+            bailOut("Screen capture refused — open Deal Checker to see why")
             return START_NOT_STICKY
         }
 
-        // Only now does this app hold the android:project_media app op, which is what makes a
-        // mediaProjection foreground service legal. Calling startForeground before this point
-        // throws SecurityException on Android 14+.
-        startForegroundNotification(mediaProjection = true)
+        if (!typed) {
+            // The projection now exists, so the app op should be held and the type should stick.
+            try {
+                startForegroundNotification(mediaProjection = true)
+                typed = true
+            } catch (e: Exception) {
+                notes.append("type upgrade refused: ${e.javaClass.simpleName}: ${e.message}\n")
+            }
+        }
+        if (!typed) {
+            recordStartupProblem(notes.toString())
+            try { p.stop() } catch (_: Exception) {}
+            bailOut("Screen capture refused — open Deal Checker to see why")
+            return START_NOT_STICKY
+        }
+        if (notes.isNotEmpty()) recordStartupProblem(notes.toString() + "recovered: bubble started anyway\n")
 
         projection = p
         p.registerCallback(projectionCallback, main)
@@ -139,7 +172,9 @@ class ScanService : Service() {
             MedianCache.load(applicationContext)
             GameIndex.load(applicationContext)
         }.start()
-        return START_STICKY
+        // Not sticky: the consent token is single-use, so a system restart would come back with a
+        // spent token and fail. Better to be plainly gone and let the user start the bubble again.
+        return START_NOT_STICKY
     }
 
     // ---------- capture ----------
@@ -530,6 +565,16 @@ class ScanService : Service() {
      * the system kills the process — so even the give-up path has to go foreground briefly, and it
      * uses specialUse because the projection op is exactly what we failed to get.
      */
+    /** Sideloaded builds have no adb, so start-up failures go where the app can show them. */
+    private fun recordStartupProblem(text: String) {
+        if (text.isBlank()) return
+        try {
+            java.io.File(filesDir, "last-crash.txt").writeText(
+                "STARTUP PROBLEM\nandroid: ${Build.VERSION.SDK_INT} on ${Build.MODEL}\n\n$text"
+            )
+        } catch (_: Exception) {}
+    }
+
     private fun bailOut(message: String) {
         startForegroundNotification(mediaProjection = false)
         toast(message)
