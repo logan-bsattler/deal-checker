@@ -67,6 +67,18 @@ class ScreenCapture(
         }
     }
 
+    /**
+     * True when the compositor has produced a new frame since the last check — which, for a
+     * mirrored virtual display, means the screen actually changed. Cheap: it acquires and closes
+     * the image without decoding it into a bitmap.
+     */
+    fun hasNewFrame(): Boolean {
+        val r = reader ?: return false
+        val img = try { r.acquireLatestImage() } catch (e: Exception) { null } ?: return false
+        img.close()
+        return true
+    }
+
     fun release() {
         try { display?.release() } catch (_: Exception) {}
         try { reader?.close() } catch (_: Exception) {}

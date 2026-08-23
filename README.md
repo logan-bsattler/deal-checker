@@ -102,6 +102,21 @@ Turn the whole thing off with the checkbox on the main screen; the app then stay
   `raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master/YYYY-MM-DD.csv` and rebuild
    `games.tsv` with `tools/build-index.js`.
 
+## Scrolling with the panel open
+
+The overlay is two windows, not one. The highlight layer is `FLAG_NOT_TOUCHABLE`, so touches fall
+straight through and the page scrolls as usual; only the bottom panel takes input.
+
+Boxes are drawn at pixel positions from one frozen frame, so they are wrong the instant the page
+moves. A mirrored virtual display only produces a frame when the screen actually changes, which
+makes `acquireLatestImage() != null` a free scroll detector — no pixel diffing needed. While the
+panel is open the service polls it every 220 ms: any movement clears the boxes immediately, and
+550 ms after the screen settles it re-reads and redraws them against the new content. Frames are
+ignored for 400 ms after the app changes its own overlay, so it does not chase its own redraws.
+
+Rescans skip any OCR line intersecting the panel — the panel is full of game names and dollar
+amounts, and reading its own output back in would let the app score itself.
+
 ## The MediaProjection start-up order
 
 On Android 14+ a `mediaProjection` foreground service needs the `android:project_media` app op, and
@@ -126,4 +141,4 @@ when the projection could not be obtained.
   row also blocks its price from drifting up to the base game above it. Expansions whose names carry
   no such word — *Ark Nova: Marine Worlds*, *Terraforming Mars Prelude* — still match the base game,
   because the index holds ranked base games only and has nothing to recognise them by.
-- The result panel blocks touches until you dismiss it. Tap anywhere or the ✕.
+- The panel blocks touches only over itself. Everything above it scrolls normally.

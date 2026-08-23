@@ -24,7 +24,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -47,6 +46,13 @@ class ScanService : Service() {
         const val KEY_LIVE = "liveLookup"
         private const val CHANNEL = "dealchecker"
         private const val NOTIF_ID = 42
+
+        /** How often to ask whether the screen moved. Cheap — it is one buffer poll. */
+        private const val MOTION_POLL = 220L
+        /** Quiet time after the last movement before the screen is re-read. */
+        private const val SETTLE_MS = 550L
+        /** Ignore frames this long after we change our own overlay, so we do not chase ourselves. */
+        private const val MUTE_MS = 400L
         private const val TAG = "ScanService"
 
         @Volatile var running = false
@@ -60,8 +66,17 @@ class ScanService : Service() {
     private var capture: ScreenCapture? = null
 
     private var bubble: View? = null
-    private var overlay: View? = null
     private var scanning = false
+
+    private var highlightWin: HighlightView? = null
+    private var panelWin: View? = null
+    private var panelList: LinearLayout? = null
+    private var panelHeadline: TextView? = null
+    private var panelRect: Rect? = null
+
+    private var watching = false
+    private var lastMotionAt = 0L
+    private var ignoreFramesUntil = 0L
 
     // Kept so an Oracle lookup landing after the scan can re-score without grabbing the screen again.
     private var lastHits: List<Hit> = emptyList()
@@ -255,8 +270,12 @@ class ScanService : Service() {
         recognizer.process(image)
             .addOnSuccessListener { text ->
                 val lines = ArrayList<OcrLine>()
+                val mine = panelRect
                 for (block in text.textBlocks) for (l in block.lines) {
                     val bb: Rect = l.boundingBox ?: continue
+                    // Our own panel prints game names and dollar amounts; reading them back in
+                    // would let the app score its own output.
+                    if (mine != null && Rect.intersects(mine, bb)) continue
                     lines.add(OcrLine(l.text, bb))
                 }
                 val hits = Matcher.match(lines)
@@ -301,7 +320,7 @@ class ScanService : Service() {
                 MedianCache.put(applicationContext, g.norm, m)
                 main.post {
                     lookupsInFlight--
-                    if (overlay != null && lookupsInFlight <= 0) showResults(score())
+                    if (panelWin != null && lookupsInFlight <= 0) showResults(score())
                 }
             }
         }
@@ -320,19 +339,40 @@ class ScanService : Service() {
 
     // ---------- results overlay ----------
 
+    /**
+     * Two separate windows on purpose. The highlight layer is FLAG_NOT_TOUCHABLE so every touch
+     * falls through to whatever you were browsing — the page keeps scrolling normally. Only the
+     * panel at the bottom takes input.
+     */
     private fun showResults(results: List<Finding>) {
-        removeOverlay()
-        val d = resources.displayMetrics.density
-        fun px(v: Float) = (v * d).toInt()
         val m = metrics()
+        showHighlights(results, m)
+        showPanel(results, m)
+        startMotionWatch()
+    }
 
-        val root = FrameLayout(this)
-        root.setOnClickListener { removeOverlay() }
-
+    private fun showHighlights(results: List<Finding>, m: Metrics) {
+        muteFrames()
+        highlightWin?.let { it.findings = results; return }
         val hv = HighlightView(this)
         hv.findings = results
-        root.addView(hv, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val lp = WindowManager.LayoutParams(
+            m.w, m.h, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
+        highlightWin = hv
+        try { wm.addView(hv, lp) } catch (e: Exception) { Log.e(TAG, "highlights: ${e.message}") }
+    }
+
+    private fun showPanel(results: List<Finding>, m: Metrics) {
+        muteFrames()
+        if (panelWin != null) { fillPanel(results, m); return }
+
+        val d = resources.displayMetrics.density
+        fun px(v: Float) = (v * d).toInt()
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -341,24 +381,27 @@ class ScanService : Service() {
             isClickable = true
         }
 
-        val buys = results.count { it.verdict.tier == Tier.BUY }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        head.addView(TextView(this).apply {
-            text = when {
-                results.isEmpty() -> "No board games found on screen"
-                buys > 0 -> "$buys good buy" + (if (buys > 1) "s" else "") + " of ${results.size} found"
-                else -> "${results.size} title" + (if (results.size > 1) "s" else "") + " found — nothing clears the bar"
-            }
+        val headline = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 13f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        head.addView(headline)
+        head.addView(TextView(this).apply {
+            text = "RESCAN"
+            setTextColor(Color.parseColor("#4CD964"))
+            textSize = 11f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(px(10f), 0, px(10f), 0)
+            setOnClickListener { rescan() }
         })
         head.addView(TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
             textSize = 16f
-            setPadding(px(12f), 0, px(4f), 0)
+            setPadding(px(8f), 0, px(4f), 0)
             setOnClickListener { removeOverlay() }
         })
         panel.addView(head)
@@ -371,41 +414,115 @@ class ScanService : Service() {
         })
 
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        if (results.isEmpty()) {
-            list.addView(ResultPanel.emptyCard(this,
-                "Nothing matched. Scroll so the game titles are fully visible and tap the bubble again."))
-        } else {
-            for (f in results) list.addView(ResultPanel.buildCard(this, f))
-        }
         val scroll = ScrollView(this).apply {
             addView(list)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (m.h * 0.42f).toInt())
+                LinearLayout.LayoutParams.MATCH_PARENT, (m.h * 0.38f).toInt()
+            )
         }
         panel.addView(scroll)
 
-        root.addView(panel, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
-
         val lp = WindowManager.LayoutParams(
-            m.w, m.h, overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0; y = 0
+        ).apply { gravity = Gravity.BOTTOM }
+
+        panelWin = panel
+        panelList = list
+        panelHeadline = headline
+        try { wm.addView(panel, lp) } catch (e: Exception) { Log.e(TAG, "panel: ${e.message}") }
+        fillPanel(results, m)
+
+        // The panel covers part of the screen, and its own text reads like a store page — game
+        // names, dollar amounts. A rescan must not read our own verdicts back in as evidence.
+        panel.post {
+            val loc = IntArray(2)
+            panel.getLocationOnScreen(loc)
+            panelRect = Rect(loc[0], loc[1], loc[0] + panel.width, loc[1] + panel.height)
         }
-        overlay = root
-        try { wm.addView(root, lp) } catch (e: Exception) { Log.e(TAG, "overlay: ${e.message}") }
+    }
+
+    private fun fillPanel(results: List<Finding>, m: Metrics) {
+        val buys = results.count { it.verdict.tier == Tier.BUY }
+        panelHeadline?.text = when {
+            results.isEmpty() -> "No board games found on screen"
+            buys > 0 -> "$buys good buy" + (if (buys > 1) "s" else "") + " of ${results.size} found"
+            else -> "${results.size} title" + (if (results.size > 1) "s" else "") + " found — nothing clears the bar"
+        }
+        val list = panelList ?: return
+        list.removeAllViews()
+        if (results.isEmpty()) {
+            list.addView(
+                ResultPanel.emptyCard(
+                    this,
+                    "Nothing matched. Scroll so the game titles are fully visible — the boxes redraw when you stop."
+                )
+            )
+        } else {
+            for (f in results) list.addView(ResultPanel.buildCard(this, f))
+        }
     }
 
     private fun removeOverlay() {
-        overlay?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        overlay = null
+        watching = false
+        main.removeCallbacks(motionWatcher)
+        highlightWin?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        panelWin?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        highlightWin = null
+        panelWin = null
+        panelList = null
+        panelHeadline = null
+        panelRect = null
+        lastMotionAt = 0L
     }
 
+    // ---------- keeping the boxes honest while you scroll ----------
+
+    /**
+     * A mirrored virtual display only produces a frame when the screen actually changes, so
+     * "is there a new frame?" is a free scroll detector. Our own overlay changes produce frames
+     * too, hence the short mute window after we touch the UI ourselves.
+     */
+    private fun muteFrames() {
+        ignoreFramesUntil = android.os.SystemClock.uptimeMillis() + MUTE_MS
+    }
+
+    private fun startMotionWatch() {
+        if (watching) return
+        watching = true
+        main.postDelayed(motionWatcher, MOTION_POLL)
+    }
+
+    private val motionWatcher = object : Runnable {
+        override fun run() {
+            if (panelWin == null) { watching = false; return }
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now >= ignoreFramesUntil) {
+                if (capture?.hasNewFrame() == true) {
+                    lastMotionAt = now
+                    // Boxes are pinned to pixels from the old frame. The moment anything moves they
+                    // are lying, so they go rather than mislabel a row.
+                    highlightWin?.let { if (it.findings.isNotEmpty()) it.findings = emptyList() }
+                } else if (lastMotionAt != 0L && now - lastMotionAt >= SETTLE_MS) {
+                    lastMotionAt = 0L
+                    rescan()
+                }
+            }
+            main.postDelayed(this, MOTION_POLL)
+        }
+    }
+
+    /** Re-reads the screen in place, keeping the panel open. */
+    private fun rescan() {
+        if (scanning || panelWin == null) return
+        scanning = true
+        val bmp = capture?.grab()
+        if (bmp == null) { scanning = false; return }
+        analyse(bmp)
+    }
     // ---------- lifecycle ----------
 
     /**
