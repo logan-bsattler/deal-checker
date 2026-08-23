@@ -20,6 +20,10 @@ for(let i=1;i<lines.length;i++){const p=lines[i].split('\t'); if(p.length<7)cont
 const owned=new Set(JSON.parse(fs.readFileSync('../app/src/main/assets/owned.json','utf8')).map(norm));
 const medians=new Map(JSON.parse(fs.readFileSync('../app/src/main/assets/medians.json','utf8')).map(([n,v])=>[norm(n),v]));
 
+const SEP=/\s*[:\u2013\u2014]\s*|\s+-\s+/;
+function prefixBeforeSep(text,phrase){const parts=text.split(SEP);
+  if(parts.length<2||!parts[1].trim())return false;
+  return norm(parts[0])===norm(phrase);}
 function isAddon(words,start,size,g){
   const own=new Set(g.name.split(/[^\p{L}\p{N}'&:.\u2013-]+/u).map(norm).filter(Boolean));
   for(let i=0;i<words.length;i++){ if(i>=start&&i<start+size)continue;
@@ -49,7 +53,8 @@ function matchLine(text){
       const wholeLine=size===words.length;
       if(!acceptable(g,size,n,wholeLine))continue;
       if(!wholeLine&&isAddon(words,s,size,g))continue;
-      return {g,conf:1,matched:phrase};
+      if(!wholeLine&&prefixBeforeSep(text,phrase))continue;
+      return {g,conf:1,matched:phrase,partial:!wholeLine,line:text};
     }
   }
   const nw=words.map(norm).filter(w=>w.length>=4);

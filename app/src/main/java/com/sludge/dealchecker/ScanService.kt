@@ -171,6 +171,7 @@ class ScanService : Service() {
         Rules.load(applicationContext)
         Thread {
             MedianCache.load(applicationContext)
+            ExpansionCache.load(applicationContext)
             GameIndex.load(applicationContext)
         }.start()
         // Not sticky: the consent token is single-use, so a system restart would come back with a
@@ -336,7 +337,10 @@ class ScanService : Service() {
     }
 
     private fun score(): List<Finding> =
-        lastHits.map { Finding(it, Rules.evaluate(it.game, lastEvidence[it.game.id])) }
+        lastHits
+            // Oracle has told us these lines are expansions or accessories, not the base game.
+            .filterNot { ExpansionCache.isNotBaseGame(it.lineText) }
+            .map { Finding(it, Rules.evaluate(it.game, lastEvidence[it.game.id])) }
             .sortedWith(compareBy({ tierOrder(it.verdict.tier) }, { it.hit.box.top }))
 
     /**
@@ -346,6 +350,22 @@ class ScanService : Service() {
      */
     private fun requestMedians(hits: List<Hit>) {
         if (!prefs().getBoolean(KEY_LIVE, true)) return
+
+        // Settle what the ambiguous lines actually are before trusting any verdict on them.
+        val unsure = hits.filter { it.partial && !ExpansionCache.isKnown(it.lineText) }
+            .distinctBy { GameIndex.normalize(it.lineText) }
+        lookupsInFlight += unsure.size
+        for (h in unsure) {
+            lookupPool.execute {
+                val t = Oracle.typeOfLine(h.lineText)
+                ExpansionCache.put(applicationContext, h.lineText, t)
+                main.post {
+                    lookupsInFlight--
+                    if (panelWin != null && lookupsInFlight <= 0) showResults(score())
+                }
+            }
+        }
+
         val wanted = hits.map { it.game }
             .filter { it.rating >= Rules.MIN_RATING && it.rank in 1 until Rules.MAX_RANK }
             .filter { GameIndex.needsLookup(it) }

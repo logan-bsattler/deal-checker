@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity() {
 
         Thread {
             MedianCache.load(applicationContext)
+            ExpansionCache.load(applicationContext)
             GameIndex.load(applicationContext)
             runOnUiThread { showDbInfo() }
         }.start()

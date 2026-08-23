@@ -8,7 +8,11 @@ data class Hit(
     val game: Game,
     val box: Rect,
     val matchedText: String,
-    val confidence: Double
+    val confidence: Double,
+    /** The full OCR line the match came from — what Oracle gets asked about. */
+    val lineText: String = matchedText,
+    /** True when the title was found inside a longer line, so it may be an expansion of it. */
+    val partial: Boolean = false
 )
 
 /**
@@ -55,6 +59,13 @@ object Matcher {
         "replacement", "sticker", "stickers", "poster", "shirt", "puzzle"
     )
 
+    /**
+     * BGG names expansions "<Base>: <Something>". A base game that genuinely has a colon —
+     * Brass: Birmingham — is in the index under its full name and matches as a whole line first,
+     * so reaching here with a bare prefix before a separator means an expansion or a variant.
+     */
+    private val SEPARATOR = Regex("""\s*[:\u2013\u2014]\s*|\s+-\s+""")
+
     // Unicode-aware: "Cóatl" must stay one word, not split into "C" and "atl".
     private val WORD_SPLIT = Regex("[^\\p{L}\\p{N}'&:.\u2013-]+")
 
@@ -79,7 +90,13 @@ object Matcher {
         val out = ArrayList<Rect>()
         for (l in lines) {
             val words = l.text.split(WORD_SPLIT)
-            if (words.any { GameIndex.normalize(it) in ADDON }) out.add(l.box)
+            if (words.any { GameIndex.normalize(it) in ADDON }) { out.add(l.box); continue }
+            // "<Known base game>: <something>" is a product row of its own, whatever it is called.
+            val parts = l.text.split(SEPARATOR)
+            if (parts.size >= 2 && parts[1].isNotBlank() &&
+                GameIndex.exact(GameIndex.normalize(parts[0])) != null &&
+                GameIndex.exact(GameIndex.normalize(l.text)) == null
+            ) out.add(l.box)
         }
         return out
     }
@@ -98,7 +115,8 @@ object Matcher {
                 val wholeLine = size == words.size
                 if (!acceptable(g, size, norm, wholeLine)) continue
                 if (!wholeLine && isAddonLine(words, start, size, g)) continue
-                return Hit(g, line.box, phrase, 1.0)
+                if (!wholeLine && isPrefixBeforeSeparator(line.text, phrase)) continue
+                return Hit(g, line.box, phrase, 1.0, line.text, !wholeLine)
             }
         }
 
@@ -147,6 +165,12 @@ object Matcher {
         if (wordCount == 1 && norm.length < 9) return g.users >= 1000
         if (g.users < 50) return wordCount >= 2 && norm.length >= 10
         return true
+    }
+
+    private fun isPrefixBeforeSeparator(lineText: String, phrase: String): Boolean {
+        val parts = lineText.split(SEPARATOR)
+        if (parts.size < 2 || parts[1].isBlank()) return false
+        return GameIndex.normalize(parts[0]) == GameIndex.normalize(phrase)
     }
 
     /**

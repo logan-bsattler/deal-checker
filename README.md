@@ -108,6 +108,25 @@ Turn the whole thing off with the checkbox on the main screen; the app then stay
   `raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master/YYYY-MM-DD.csv` and rebuild
    `games.tsv` with `tools/build-index.js`.
 
+## Telling expansions from base games
+
+The bundled index holds ranked base games only, so "Ark Nova: Marine Worlds" at $19 would otherwise
+be scored against Ark Nova's $74.75 median and shout GOOD BUY. Three layers stop that:
+
+1. **Add-on keywords** — `Expansion`, `Promo`, `Pack`, `Playmat`, `Sleeves`, and friends, counted
+   only when they fall outside the matched game's own title.
+2. **The separator rule** — BGG names expansions `<Base>: <Something>`. A bare base-game name
+   sitting before a `:`, `–`, `—` or ` - ` is rejected. Base games that genuinely contain a colon
+   (*Brass: Birmingham*, *Azul: Summer Pavilion*, *Terraforming Mars: Ares Expedition*) are in the
+   index under their full names and match as a whole line before this rule is reached.
+3. **Oracle's verdict** — for anything still matched *inside* a longer line, `boardgame.list`
+   reports the type of its best match: `boardgame`, `boardgameexpansion` or `boardgameaccessory`.
+   Anything not a base game is dropped from the results, and the answer is cached for 60 days.
+
+Layer 3 is what catches expansions with no punctuation and no keyword, like *Terraforming Mars
+Prelude*. With live lookup switched off it cannot run, so those partial matches are kept and the
+card says "found inside …  — check it is the base game" rather than pretending to be sure.
+
 ## Scrolling with the panel open
 
 The overlay is two windows, not one. The highlight layer is `FLAG_NOT_TOUCHABLE`, so touches fall
@@ -152,8 +171,5 @@ previous instance first, for the same reason.
 - Games BGG hasn't ranked don't exist in the index. They'd fail the rank bar anyway.
 - Titles with fewer than 150 ratings are ignored to keep site furniture from matching obscure
   namesakes. Those also can't clear the rank bar.
-- Expansions are filtered by keyword (`Expansion`, `Promo`, `Playmat`, `Sleeves`, …), and an add-on
-  row also blocks its price from drifting up to the base game above it. Expansions whose names carry
-  no such word — *Ark Nova: Marine Worlds*, *Terraforming Mars Prelude* — still match the base game,
-  because the index holds ranked base games only and has nothing to recognise them by.
+- See *Telling expansions from base games* below — mostly handled, with one offline blind spot.
 - The panel blocks touches only over itself. Everything above it scrolls normally.

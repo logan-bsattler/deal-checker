@@ -61,6 +61,22 @@ object Oracle {
         return Math.abs(a - y)
     }
 
+    /**
+     * What Oracle's best match for a whole product line is: "boardgame", "boardgameexpansion",
+     * "boardgameaccessory", or null when it does not recognise the line at all.
+     */
+    fun typeOfLine(lineText: String): String? {
+        return try {
+            val body = get("boardgame.list", JSONObject().put("region", "us").put("q", lineText))
+            val items = body?.optJSONObject("result")?.optJSONObject("data")?.optJSONArray("items")
+            if (items == null || items.length() == 0) return null
+            items.optJSONObject(0)?.optString("type")?.ifEmpty { null }
+        } catch (e: Exception) {
+            Log.w(TAG, "typeOfLine failed for $lineText: ${e.message}")
+            null
+        }
+    }
+
     private data class Candidate(val title: String, val year: Int?, val key: String)
     private data class Detail(val bggId: Int?, val median: Double?, val offers: Int)
 

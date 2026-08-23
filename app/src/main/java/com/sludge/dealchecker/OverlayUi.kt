@@ -154,6 +154,14 @@ object ResultPanel {
         }
         card.addView(why)
 
+        if (f.hit.partial) {
+            card.addView(TextView(ctx).apply {
+                text = "found inside “${f.hit.lineText.take(60)}” — check it is the base game"
+                setTextColor(Color.parseColor("#E9C46A"))
+                textSize = 10f
+                setPadding(0, px(3f), 0, 0)
+            })
+        }
         if (f.hit.confidence < 0.999) {
             card.addView(TextView(ctx).apply {
                 text = "matched \"${f.hit.matchedText}\" (fuzzy ${(f.hit.confidence * 100).toInt()}%)"
